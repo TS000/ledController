@@ -160,8 +160,6 @@ void loop() {
 
   displayMenu(adjustedBPM);
   controllerBpmLed(adjustedBPM);
-
-  // updateDisplay();
 }
 
 //========================================================================================================= Menu ================= Menu
@@ -182,10 +180,9 @@ void displayMenuItem(int itemIndex, bool selected) {
 }
 
 void displayMenu(int bpm) {
-  // tft.fillScreen(BLACK);  // Add this line to update the screen
   displayMenuHeader();
 
-  bigBPM(bpm);
+  bigBPM(bpm, bpmAdjust);
 
   for (int i = 1; i <= 3; i++) {
     displayMenuItem(i, i == selectedMenuItem);
@@ -237,13 +234,18 @@ void devicesMenuItemSelected() {
   // Add your device-related logic here
 }
 
-void bigBPM(int bpm) {
+void bigBPM(int bpm, int nudge) {
   tft.setTextColor(RED, BLACK);
   tft.setCursor(10, 10);
   // tft.print("BPM:");
   tft.setTextSize(3);
-  tft.setCursor(70, 75);
+  tft.setCursor(70, 57);
   tft.print(bpm);
+  tft.setTextSize(2);
+  tft.setTextColor(WHITE, BLACK);
+  tft.setCursor(70, 93);
+  tft.print(nudge);
+  tft.print("  ");
 }
 
 // ========================================================================== Physical Hardware Items ============= Physical Hardware Items
@@ -262,6 +264,8 @@ void controllerBpmLed(int adjustedBPM){
 
     if (currentMillis - previousMillis >= ledBlinkInterval / 2 && !resetButtonPressed) {
       digitalWrite(LED_PIN, HIGH);
+    } else {
+      
     }
 
     if (currentMillis - previousMillis >= ledBlinkInterval && !resetButtonPressed) {
@@ -288,10 +292,10 @@ void adjustBPM() {
     bpmAdjust += direction * nudgeAmount;
 
     // Limit the BPM adjustment to a reasonable range
-    if (bpmAdjust < -20) {
-      bpmAdjust = -1;
-    } else if (bpmAdjust > 20) {
-      bpmAdjust = 1;
+    if (bpmAdjust < -100) {
+      bpmAdjust --;
+    } else if (bpmAdjust > 100) {
+      bpmAdjust ++;
     }
 
     encoder_position = new_position;
