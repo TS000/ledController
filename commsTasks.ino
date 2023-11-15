@@ -43,6 +43,7 @@ int bpmAdjust = 0;
 int currentBPM;  // Store the current BPM
 int adjustedBPM;
 int persistantBPM;
+int previousBPM;
 
 // Define menu headers
 static const char* menuHeaders[] = {
@@ -86,9 +87,10 @@ void setup() {
 
   // encoder_position = ss.getEncoderPosition();
 
-  pinMode(LED_BUILTIN, OUTPUT);    // set LED pin as output
-  digitalWrite(LED_BUILTIN, LOW);  // switch off LED pin
   Serial1.begin(9600);
+  tft.begin();  // Initialize the OLED display using the tft object
+  tft.setRotation(1);
+  tft.fillScreen(BLACK);  // Fill the screen with black
 }
 
 void loop() {
@@ -115,4 +117,97 @@ void loop() {
   }
 
   Serial.println(currentBPM);
+
+  handleMenuNavigation();
+
+    // Check if a menu item has been selected
+  if (menuItemSelected) {
+    switch (selectedMenuItem) {
+      case 1:
+        currentMenu = ANIMATE;
+        break;
+      case 2:
+        currentMenu = NUMBERS;
+        break;
+      case 3:
+        currentMenu = DEVICES;
+        break;
+    }
+
+    // Reset the flag
+    menuItemSelected = false;
+  }
+
+    if (currentBPM != previousBPM) {
+    screenNeedsUpdate = true;
+    previousBPM = currentBPM;
+  }
+
+  if (screenNeedsUpdate) {
+    displayMenu(currentBPM);
+    screenNeedsUpdate = false;
+  }
 }
+
+//======= Menu =======
+void displayMenuHeader() {
+  tft.setTextColor(WHITE, BLACK);  // Set text color
+
+  // Display the selected menu header
+  tft.setTextSize(2);
+  tft.setCursor(10, 10);
+  tft.println(menuHeaders[currentMenu]);
+}
+
+void displayMenuItem(int itemIndex, bool selected) {
+  tft.setTextSize(1);
+  tft.setTextColor(selected ? RED : WHITE);  // Highlight the selected item
+  tft.setCursor(10, 40 + (itemIndex * 20));
+  tft.println(menuHeaders[itemIndex]);
+}
+
+void displayMenu(int bpm) {
+  displayMenuHeader();
+
+  bigBPM(bpm, bpmAdjust);
+
+  for (int i = 1; i <= 3; i++) {
+    displayMenuItem(i, i == selectedMenuItem);
+  }
+}
+
+void bigBPM(int bpm, int nudge) {
+  tft.setTextColor(RED, BLACK);
+  tft.setCursor(10, 10);
+  // tft.print("BPM:");
+  tft.setTextSize(3);
+  tft.setCursor(70, 57);
+  tft.print(bpm);
+  tft.setTextSize(2);
+  tft.setTextColor(WHITE, BLACK);
+  tft.setCursor(70, 93);
+  tft.print(nudge);
+  tft.print("  ");
+}
+
+void handleMenuNavigation() {
+  // int encoderValue = ss.getEncoderPosition();
+  // static int lastEncoderValue = encoderValue;
+
+  // if (resetButtonPressed) {
+  //   adjustBPM();
+  // }
+
+  // if (encoderValue != lastEncoderValue) {
+  //   // Rotary knob rotated, update the selected menu item
+  //   selectedMenuItem += (encoderValue - lastEncoderValue);
+
+  //   // Ensure the selectedMenuItem stays within bounds
+  //   if (selectedMenuItem < 1) {
+  //     selectedMenuItem = 1;
+  //   } else if (selectedMenuItem > 3) {
+  //     selectedMenuItem = 3;
+  //   }
+
+  //   lastEncoderValue = encoderValue;
+  }
