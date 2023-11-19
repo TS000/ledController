@@ -34,7 +34,7 @@ Bounce buttons[5];  // Create an array of debounced buttons
 bool ledState[5] = { false };     // Store the state of each LED
 bool resetButtonPressed = false;  // Flag to track reset button press
 
-unsigned long previousTimer = 0;        // Initialize a variable to store the last time the code ran
+unsigned long previousTimer = 0;       // Initialize a variable to store the last time the code ran
 const unsigned long timerInter = 500;  // Interval in milliseconds (1 second)
 
 void setup() {
@@ -102,10 +102,12 @@ void loop() {
   if (currentTimer - previousTimer >= timerInter) {
     // It's time to run your code
     previousTimer = currentTimer;  // Update the previous time
+    Serial.println(currentBPM);
 
-    // Your code to run at the specified interval
-    // This code should not block and execute quickly
-    transmitter(currentBPM);
+    if (currentBPM >= 50 && currentBPM <= 170) {
+      // send bytes
+      transmitter(currentBPM);
+    }
   }
 }
 
