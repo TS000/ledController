@@ -102,25 +102,20 @@ void loop() {
 
     // Your code to run at the specified interval
     // This code should not block and execute quickly
-    if (Serial1.available() > 0) {
+    if (Serial1.available() >= 3) {
       bitOne = Serial1.read();
-    }
-    if (Serial1.available() > 0) {
       bitTwo = Serial1.read();
-    }
-    if (Serial1.available() > 0) {
       bitThree = Serial1.read();
     }
 
     String concatenatedString = String(bitOne) + String(bitTwo) + String(bitThree);
     currentBPM = concatenatedString.toInt();
+     Serial.println(currentBPM);
   }
-
-  Serial.println(currentBPM);
 
   handleMenuNavigation();
 
-    // Check if a menu item has been selected
+  // Check if a menu item has been selected
   if (menuItemSelected) {
     switch (selectedMenuItem) {
       case 1:
@@ -138,7 +133,7 @@ void loop() {
     menuItemSelected = false;
   }
 
-    if (currentBPM != previousBPM) {
+  if (currentBPM != previousBPM) {
     screenNeedsUpdate = true;
     previousBPM = currentBPM;
   }
@@ -210,4 +205,4 @@ void handleMenuNavigation() {
   //   }
 
   //   lastEncoderValue = encoderValue;
-  }
+}
