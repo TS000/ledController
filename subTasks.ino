@@ -11,7 +11,7 @@ ArduinoTapTempo tapTempo;
 
 const int ledPins[] = { 13, A1, A2, A3, A4 };  // Define an array of button pins
 const int numLEDs = 5;                         // Number of LEDs
-const int buttonPins[] = { 4, 5, 6, 7, 8 };    // Define an array of button pins
+const int buttonPins[] = { 4, 2, 3, 7, 8 };    // Define an array of button pins
 const int numButtons = 5;
 int buttonChar[numButtons];
 
@@ -24,6 +24,8 @@ unsigned long resetTime = 0;
 
 unsigned long lastUpdateMillis = 0;
 const unsigned long updateInterval = 10;
+
+unsigned long ledBlinkDuration[5] = {0};
 
 unsigned long previousMillis = 0;
 unsigned long interval;
@@ -71,11 +73,18 @@ void loop() {
     buttons[i].update();  // Update the button states
 
     if (buttons[i].fell()) {                  // Button pressed
+      Serial.println(i);
       ledState[i] = !ledState[i];             // Toggle LED state
-      digitalWrite(ledPins[i], ledState[i]);  // Update the LED state
+      digitalWrite(ledPins[i], HIGH);        // Turn on the LED
+      ledBlinkDuration[i] = currentTimer + 200;  // Set the time to turn off the LED (adjustable duration)
+      transmitter(currentBPM, i);
+    }
+
+    // Check if it's time to turn off the LED
+    if (currentTimer >= ledBlinkDuration[i] && digitalRead(ledPins[i]) == HIGH) {
+      digitalWrite(ledPins[i], LOW);  // Turn off the LED
     }
   }
-
   bool buttonDown = digitalRead(BUTTON_PIN) == LOW;
   tapTempo.update(buttonDown);
 
@@ -104,24 +113,35 @@ void loop() {
     previousTimer = currentTimer;  // Update the previous time
     Serial.println(currentBPM);
 
-    if (currentBPM >= 50 && currentBPM <= 170) {
-      // send bytes
-      transmitter(currentBPM);
-    }
+    // if (currentBPM >= 50 && currentBPM <= 170) {
+    //   // send bytes
+    //   transmitter(currentBPM);
+    // }
   }
 }
 
-void transmitter(int bpm) {
-  // Serial.println(bpm);
+void transmitter(int bpm, int buttonState) {
   if (bpm >= 100 && bpm <= 999) {
-    byte highByte = bpm / 100;
-    byte middleByte = (bpm / 10) % 10;
-    byte lowByte = bpm % 10;
+    // Send BPM value
+    Serial1.write((byte)(bpm >> 8));  // High byte
+    Serial1.write((byte)bpm);          // Low byte
 
-    Serial1.write(highByte);
-    Serial1.write(middleByte);
-    Serial1.write(lowByte);
+    // Send button state
+    Serial1.write((byte)buttonState);
   }
+
+
+
+  // int encapsulatedValue = (bpm << 8) | buttonState;
+
+  // if (bpm >= 100 && bpm <= 999 && buttonState >= 0 && buttonState <= 255) {
+  //   Serial1.write(encapsulatedValue >> 8);  // Send the high byte of encapsulatedValue
+  //   Serial1.write(encapsulatedValue & 0xFF);  // Send the low byte of encapsulatedValue
+  // } else {
+  //   // Send a placeholder value if data is not ready
+  //   Serial1.write(0xFF);  // High byte placeholder
+  //   Serial1.write(0xFF);  // Low byte placeholder
+  // }
 }
 
 // ========================================================================== Physical Hardware Items ============= Physical Hardware Items
