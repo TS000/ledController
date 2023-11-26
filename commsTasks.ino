@@ -44,6 +44,7 @@ int currentBPM;  // Store the current BPM
 int adjustedBPM;
 int persistantBPM;
 int previousBPM;
+int currentButton;
 
 // Define menu headers
 static const char* menuHeaders[] = {
@@ -65,8 +66,10 @@ enum MenuState {
 int bitOne = 1;
 int bitTwo = 1;
 int bitThree = 0;
+int bitFour = 0;
 unsigned long previousTimer = 0;       // Initialize a variable to store the last time the code ran
 const unsigned long timerInter = 500;  // Interval in milliseconds (1 second)
+Uart mySerial (&sercom0, 5, 6, SERCOM_RX_PAD_1, UART_TX_PAD_0);
 
 // Variables to track the current menu state and the selected menu item
 MenuState currentMenu = MAIN_MENU;
@@ -75,6 +78,15 @@ int selectedMenuItem = 1;       // Start with the first menu item selected
 bool menuItemSelected = false;  // Flag to track menu item selection
 
 bool screenNeedsUpdate = true;
+
+enum ReceiverState {
+  IDLE,
+  WAIT_FOR_BUTTON,
+  PROCESS_BUTTON_DATA
+};
+
+ReceiverState receiverState = IDLE;
+String receivedDataBuffer = "";
 
 void setup() {
 
@@ -87,7 +99,10 @@ void setup() {
 
   // encoder_position = ss.getEncoderPosition();
 
+  Serial.begin(9600);
   Serial1.begin(9600);
+  mySerial.begin(9600);
+
   tft.begin();  // Initialize the OLED display using the tft object
   tft.setRotation(1);
   tft.fillScreen(BLACK);  // Fill the screen with black
@@ -98,21 +113,23 @@ void loop() {
 
   if (currentTimer - previousTimer >= timerInter) {
     // It's time to run your code
-    previousTimer = currentTimer;  // Update the previous time
+    // previousTimer = currentTimer;  // Update the previous time
 
-    // Your code to run at the specified interval
-    // This code should not block and execute quickly
-    if (Serial1.available() >= 3) {
-      bitOne = Serial1.read();
-      bitTwo = Serial1.read();
-      bitThree = Serial1.read();
-    }
+    // // Your code to run at the specified interval
+    // // This code should not block and execute quickly
+    // if (Serial1.available() >= 3) {
+    //   bitOne = Serial1.read();
+    //   bitTwo = Serial1.read();
+    //   bitThree = Serial1.read();
+    //   bitFour = Serial1.read();
+    // }
 
-    String concatenatedString = String(bitOne) + String(bitTwo) + String(bitThree);
-    currentBPM = concatenatedString.toInt();
-     Serial.println(currentBPM);
+    // String concatenatedString = String(bitOne) + String(bitTwo) + String(bitThree);
+    // currentBPM = concatenatedString.toInt();
+    //  Serial.println(currentBPM);
   }
 
+  receiver();
   handleMenuNavigation();
 
   // Check if a menu item has been selected
@@ -164,7 +181,7 @@ void displayMenuItem(int itemIndex, bool selected) {
 void displayMenu(int bpm) {
   displayMenuHeader();
 
-  bigBPM(bpm, bpmAdjust);
+  bigBPM(bpm, currentButton);
 
   for (int i = 1; i <= 3; i++) {
     displayMenuItem(i, i == selectedMenuItem);
@@ -205,4 +222,74 @@ void handleMenuNavigation() {
   //   }
 
   //   lastEncoderValue = encoderValue;
+}
+
+void receiver() {
+   if (Serial1.available() >= 2) { // Make sure at least 2 bytes are available
+    byte highByte = Serial1.read();
+    byte lowByte = Serial1.read();
+
+    // Check for the placeholder value
+    if (highByte == 0xFF && lowByte == 0xFF) {
+      // Data not ready, ignore
+      return;
+    }
+
+    int encapsulatedValue = (highByte << 8) | lowByte;
+
+    int receivedBPM = encapsulatedValue >> 8;
+    int receivedButtonState = encapsulatedValue & 0xFF;
+    currentBPM = receivedBPM;
+    currentButton = receivedButtonState;
+
+    // Now you have the received BPM and button state
+    // Do something with receivedBPM and receivedButtonState
+  }
+    // if (mySerial.available() > 0) {
+    //     char receivedChar = mySerial.read();
+    //     processReceivedChar(receivedChar);
+    // }
+
+    // Add non-blocking logic here, if needed
+    // For example, you might want to update the display or perform other tasks
+    // outside the mySerial.available loop without blocking.
+}
+
+void processReceivedChar(char receivedChar) {
+    switch (receiverState) {
+        case IDLE:
+            if (receivedChar == 'B') {
+                receiverState = WAIT_FOR_BUTTON;
+                receivedDataBuffer = "";
+            }
+            break;
+
+        case WAIT_FOR_BUTTON:
+            if (receivedChar == ':') {
+                receiverState = PROCESS_BUTTON_DATA;
+            } else {
+                receivedDataBuffer += receivedChar;
+            }
+            break;
+
+        case PROCESS_BUTTON_DATA:
+            // Process the button data
+            int buttonNumber = receivedDataBuffer.toInt();
+            processReceivedData(buttonNumber);
+
+            // Return to the IDLE state
+            receiverState = IDLE;
+            break;
+    }
+}
+
+void processReceivedData(int buttonNumber) {
+    // Example: Print received data to Serial monitor
+    Serial.print("Button Pressed: ");
+    Serial.println(buttonNumber);
+
+    // Add your non-blocking actions here based on the buttonNumber
+    // For example, update the display or perform other tasks.
+
+    // Note: Adjust the actions based on the actual data sent by the sender.
 }
