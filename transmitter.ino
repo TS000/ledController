@@ -1,10 +1,8 @@
 #include <ArduinoTapTempo.h>
 #include <Bounce2.h>
 
-// TODO:
-
 const int BUTTON_PIN = 9;
-// const int RESET_BUTTON_PIN = 8;
+const int ALT_MODE_BUTTON_PIN = 11;
 const int LED_PIN = A5;  // Pin for the LED
 const int SERIAL_BAUD_RATE = 9600;
 ArduinoTapTempo tapTempo;
@@ -31,7 +29,7 @@ unsigned long ledBlinkDuration[5] = {0};
 unsigned long previousMillis = 0;
 unsigned long interval;
 
-Bounce resetButton = Bounce();
+Bounce altModeButton = Bounce();
 Bounce buttons[5];  // Create an array of debounced buttons
 
 bool ledState[5] = {false};       // Store the state of each LED
@@ -63,48 +61,72 @@ void setup() {
         buttons[i].interval(50);  // Debounce interval in milliseconds
     }
 
+    pinMode(ALT_MODE_BUTTON_PIN, INPUT_PULLUP);
+    altModeButton.attach(ALT_MODE_BUTTON_PIN);
+    altModeButton.interval(50);
+
     delay(1000);
 }
-
+bool buttonPressedLast[5] = {false};
+bool lastAltMode = false;
 void loop() {
     unsigned long currentTimer = millis();  // Get the current time
+    altModeButton.update();                 // Update the alternate mode button state
+
+    bool altMode = altModeButton.read() == HIGH;  // Check if the alternate mode is active
+
     for (int i = 0; i < 5; i++) {
         buttons[i].update();  // Update the button states
 
-        if (buttons[i].fell()) {                       // Button pressed
-                                                       //   Serial.println(i);
+        bool buttonPressed = buttons[i].read() == LOW;
+
+        if (altMode && i == 0 && buttonPressed && !buttonPressedLast[i]) {
+            adjustedBPM++;  // Increase BPM
+        } else if (altMode && i == 1 && buttonPressed && !buttonPressedLast[i]) {
+            adjustedBPM--;  // Decrease BPM
+        } else if (buttonPressed && !buttonPressedLast[i]) {
             ledState[i] = !ledState[i];                // Toggle LED state
             digitalWrite(ledPins[i], HIGH);            // Turn on the LED
             ledBlinkDuration[i] = currentTimer + 150;  // Set the time to turn off the LED (adjustable duration)
             currentButton = i;
         }
 
+        buttonPressedLast[i] = buttonPressed;
+
         // Check if it's time to turn off the LED
         if (currentTimer >= ledBlinkDuration[i] && digitalRead(ledPins[i]) == HIGH) {
             digitalWrite(ledPins[i], LOW);  // Turn off the LED
         }
     }
-    bool buttonDown = digitalRead(BUTTON_PIN) == LOW;
+
+        bool buttonDown = digitalRead(BUTTON_PIN) == LOW;
     tapTempo.update(buttonDown);
+    if (!altMode) {
+        if (tapTempo.isChainActive()) {
+            currentBPM = tapTempo.getBPM();
+        }
+    } else {
+        if (!lastAltMode) {
+            adjustedBPM = currentBPM;  // Update adjustedBPM with currentBPM when entering altMode
+        }
+        currentBPM = adjustedBPM;  // Use adjustedBPM as currentBPM when in altMode
+    }
+    lastAltMode = altMode;
 
-    transmitter(currentBPM, currentButton);
+    transmitter(currentBPM, currentButton);  // Use currentBPM instead of adjustedBPM
 
-    currentBPM = tapTempo.getBPM();
-    adjustedBPM = currentBPM + bpmAdjust;
     unsigned long currentMillis = millis();
 
-    interval = 60000 / adjustedBPM;
-    // Serial.println(adjustedBPM);
+    interval = 60000 / currentBPM;  // Use currentBPM instead of adjustedBPM
+
     if (currentMillis - previousMillis >= interval) {
         previousMillis = currentMillis;
         digitalWrite(LED_PIN, !digitalRead(LED_PIN));  // Toggle the LED state
-                                                       // Serial.println(adjustedBPM);
     }
 
     if (currentTimer - previousTimer >= timerInter) {
-        // It's time to run your code
         previousTimer = currentTimer;  // Update the previous time
-        Serial.println(currentBPM);
+        Serial.println(currentBPM);    // Print currentBPM instead of adjustedBPM
     }
 }
 
