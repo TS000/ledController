@@ -1,0 +1,150 @@
+#include <Arduino.h>
+#include <FastLED.h>
+#include <WebSocketsClient_Generic.h>
+#include <WiFiNINA_Generic.h>
+
+#define NUM_LEDS 19
+#define DATA_PIN 13
+CRGB leds[NUM_LEDS];
+
+// Network settings
+const char* ssid = "";
+const char* password = "";
+const char* server = "";
+const int port = ;
+const String arduinoID = "1";  // Unique ID for this Arduino
+
+// WebSocket client
+WebSocketsClient client;
+WiFiClient wifiClient;
+
+// Blink variables
+bool isBlinking = false;
+unsigned long lastBlinkTime = 0;
+const int blinkDuration = 500;  // milliseconds for one blink
+
+// LED vars
+int currentColor = 1;
+int currentBrightness = 250;
+int currentButton = 0;
+
+void setup() {
+  Serial.begin(9600);
+  FastLED.addLeds<WS2813, DATA_PIN, GRB>(leds, NUM_LEDS);
+  connectToWiFi();
+  connectToWebSocket();
+  client.onEvent(webSocketEvent);
+}
+
+void loop() {
+  client.loop();
+
+  // Non-blocking blink logic
+  if (isBlinking && millis() - lastBlinkTime > blinkDuration) {
+    // Toggle LEDs
+
+    for (int i = 0; i < NUM_LEDS; i++) {
+        leds[i] = (leds[i] == CRGB::Red) ? CRGB::Black : CRGB::Red;
+
+    }
+   // Add sparkles if currentButton is 1
+    if (currentButton == 1) {
+      addGlitter(80);  // Adjust the 'chanceOfGlitter' parameter as needed
+    }
+    FastLED.setBrightness(currentBrightness);
+    FastLED.show();
+
+    // Reset blink state after one full cycle
+    isBlinking = false;
+  }
+}
+
+void connectToWiFi() {
+  if (WiFi.status() != WL_CONNECTED) {
+    WiFi.begin(ssid, password);
+    while (WiFi.status() != WL_CONNECTED) {
+      delay(500);
+      Serial.print(".");
+    }
+    Serial.println("\nConnected to WiFi");
+  }
+}
+
+void connectToWebSocket() {
+  client.begin(server, port, "/");
+  client.onEvent(webSocketEvent);
+  Serial.println("WebSocket client started");
+}
+
+void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
+  switch (type) {
+    case WStype_DISCONNECTED:
+      Serial.println("[WebSocket] Disconnected");
+      break;
+    case WStype_CONNECTED:
+      Serial.println("[WebSocket] Connected");
+      client.sendTXT(arduinoID);  // Send ID to the server
+      break;
+    case WStype_TEXT:
+      {
+        String message = String((char*)payload);
+        Serial.print("Received message: ");
+        Serial.println(message);
+
+        if (message.startsWith("TURN_ON")) {
+          // Parse the message for additional data
+          int firstCommaIndex = message.indexOf(',');
+          int secondCommaIndex = message.indexOf(',', firstCommaIndex + 1);
+          int thirdCommaIndex = message.indexOf(',', secondCommaIndex + 1);
+
+          String brightnessValue = message.substring(firstCommaIndex + 1, secondCommaIndex);
+          String colorValue = message.substring(secondCommaIndex + 1, thirdCommaIndex);
+          String buttonValue = message.substring(thirdCommaIndex + 1);
+
+          // Convert brightnessValue to an integer
+          int brightness = brightnessValue.toInt();
+
+          // Now you can use brightness, colorValue, and buttonValue as needed
+          // For example:
+          Serial.print("Brightness: ");
+          Serial.println(currentBrightness);
+          Serial.print("Color: ");
+          Serial.println(currentColor);
+          Serial.print("Button: ");
+          Serial.println(currentButton);
+          currentBrightness = brightness;
+
+          currentButton = buttonValue.toInt();
+
+          currentColor = colorValue.toInt();
+
+
+          turnOnLEDs();  // or pass the parsed values to this function
+          // Additional logic for handling brightness, color, and button can be added here
+        }
+      }
+      break;
+  }
+}
+
+// Animations
+void addGlitter(fract8 chanceOfGlitter) {
+  if (random8() < chanceOfGlitter) {
+    // Pick a random starting LED for the glitter
+    int startLed = random16(NUM_LEDS - 3); // Ensure there's space for 3 LEDs
+
+    // Light up 3 consecutive LEDs
+    for(int i = 0; i < 3; i++) {
+      leds[startLed + i] += CRGB::White;
+    }
+  }
+}
+
+void turnOnLEDs() {
+  isBlinking = true;
+  lastBlinkTime = millis();
+  for (int i = 0; i < NUM_LEDS; i++) {
+    leds[i] = CRGB::Red;  // Initially set all LEDs to red
+  }
+  FastLED.show();
+}
