@@ -1,8 +1,21 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1351.h>
-#include <Adafruit_seesaw.h>
-#include <ArduinoBLE.h>
 #include <Bounce2.h>
+#include <WebSocketsClient_Generic.h>
+#include <WiFiNINA_Generic.h>
+
+#define DEBUG_WEBSOCKETS_PORT Serial
+
+WebSocketsClient client;
+
+// Sockets
+const char* ssid = "";
+const char* password = "";
+const char* server = "";
+const int port = ;
+const String arduinoID = "9";
+
+WiFiClient wifiClient;
 
 // OLED Display Configuration
 #define SCREEN_WIDTH 128
@@ -33,21 +46,20 @@ String receivedData;
 // Create an instance of the Adafruit_SSD1351 display object
 Adafruit_SSD1351 tft = Adafruit_SSD1351(SCREEN_WIDTH, SCREEN_HEIGHT, &SPI, CS_PIN, DC_PIN, RST_PIN);
 
-const int ENCODER_INTERRUPT_PIN = 24;
-const int SERIAL_BAUD_RATE = 115200;
-Adafruit_seesaw ss;
-
-int32_t encoder_position;
-int ENCODER_MODE = false;
 int bpmAdjust = 0;
-int currentBPM;  // Store the current BPM
 int adjustedBPM;
 int persistantBPM;
-int previousBPM;
+int previousBPM = 1;
+int currentBPM;  // Store the current BPM
 int currentButton = 9;
+int currentBrightness = 90;
+int currentColor = 3;
+int previousButton;
+int previousBrightness;
+int previousColor;
 
 // Define menu headers
-static const char *menuHeaders[] = {
+static const char* menuHeaders[] = {
     "_test:",
     "test",
     "test",
@@ -68,7 +80,6 @@ int bitThree = 0;
 int bitFour = 0;
 unsigned long previousTimer = 0;       // Initialize a variable to store the last time the code ran
 const unsigned long timerInter = 500;  // Interval in milliseconds (1 second)
-Uart mySerial(&sercom0, 5, 6, SERCOM_RX_PAD_1, UART_TX_PAD_0);
 
 // Variables to track the current menu state and the selected menu item
 MenuState currentMenu = MAIN_MENU;
@@ -77,48 +88,39 @@ int selectedMenuItem = 1;       // Start with the first menu item selected
 bool menuItemSelected = false;  // Flag to track menu item selection
 
 bool screenNeedsUpdate = true;
+unsigned long lastWebSocketConnectAttemptTime = 0;
+unsigned long wifiConnectAttemptTime = 0;
+unsigned long lastSendTime = 0;
+String message;
 
 void setup() {
-    // if (!ss.begin(0x36)) {
-    //   Serial.println("Couldn't find seesaw on default address");
-    //   while (1) delay(10);
-    // };
-
-    // ss.enableEncoderInterrupt(ENCODER_INTERRUPT_PIN);
-
-    // encoder_position = ss.getEncoderPosition();
-
     Serial.begin(9600);
     Serial1.begin(9600);
 
     tft.begin();  // Initialize the OLED display using the tft object
     tft.setRotation(1);
     tft.fillScreen(BLACK);  // Fill the screen with black
+    WiFi.begin(ssid, password);
+
+    // If the connection is successful, start the WebSocket connection
+    // Connect to websocket server
+    client.begin(server, port, "/");
+    // String dataToSend = String(arduinoID) + "," + String(currentBPM) + "," + String(currentButton) + "," + String(currentBrightness) + "," + String(currentColor);
+    // client.sendTXT(dataToSend);
+
+    // Set up event handler
+    client.begin(server, port, "/");
+    client.onEvent(webSocketEvent);
 }
 
+bool isConnected = false;
+
 void loop() {
-    unsigned long currentTimer = millis();  // Get the current time
-
-    if (currentTimer - previousTimer >= timerInter) {
-        // It's time to run your code
-        // previousTimer = currentTimer;  // Update the previous time
-
-        // // Your code to run at the specified interval
-        // // This code should not block and execute quickly
-        // if (Serial1.available() >= 3) {
-        //   bitOne = Serial1.read();
-        //   bitTwo = Serial1.read();
-        //   bitThree = Serial1.read();
-        //   bitFour = Serial1.read();
-        // }
-
-        // String concatenatedString = String(bitOne) + String(bitTwo) + String(bitThree);
-        // currentBPM = concatenatedString.toInt();
-        //  Serial.println(currentBPM);
-    }
+    client.loop();
+    connectToWiFi();
+    sendDataAtBPMInterval();
 
     receiver();
-    handleMenuNavigation();
 
     // Check if a menu item has been selected
     if (menuItemSelected) {
@@ -190,85 +192,146 @@ void bigBPM(int bpm, int button) {
     tft.print("  ");
 }
 
-void handleMenuNavigation() {
-    // int encoderValue = ss.getEncoderPosition();
-    // static int lastEncoderValue = encoderValue;
-
-    // if (resetButtonPressed) {
-    //   adjustBPM();
-    // }
-
-    // if (encoderValue != lastEncoderValue) {
-    //   // Rotary knob rotated, update the selected menu item
-    //   selectedMenuItem += (encoderValue - lastEncoderValue);
-
-    //   // Ensure the selectedMenuItem stays within bounds
-    //   if (selectedMenuItem < 1) {
-    //     selectedMenuItem = 1;
-    //   } else if (selectedMenuItem > 3) {
-    //     selectedMenuItem = 3;
-    //   }
-
-    //   lastEncoderValue = encoderValue;
-}
-
 enum ReceiverState {
     WAIT_FOR_HEADER,
     WAIT_FOR_BPM_DATA,
     WAIT_FOR_TWO_DIGIT_BPM_DATA,
-    WAIT_FOR_BUTTON_DATA
+    WAIT_FOR_BUTTON_DATA,
+    WAIT_FOR_BRIGHTNESS_DATA,
+    WAIT_FOR_COLOR_DATA
 };
 
 ReceiverState receiverState = WAIT_FOR_HEADER;
 byte headerByte;
 
 void receiver() {
-switch (receiverState) {
-    case WAIT_FOR_HEADER:
-        if (Serial1.available() > 0) {
-            headerByte = Serial1.read();
-            if (headerByte == 0x01) {
-                receiverState = WAIT_FOR_BPM_DATA;
-            } else if (headerByte == 0x02) {
-                receiverState = WAIT_FOR_BUTTON_DATA;
-            } else if (headerByte == 0x03) {
-                receiverState = WAIT_FOR_TWO_DIGIT_BPM_DATA;
-            } else {
-                Serial.println("Received unexpected headerByte");
+    switch (receiverState) {
+        case WAIT_FOR_HEADER:
+            if (Serial1.available() > 0) {
+                headerByte = Serial1.read();
+                if (headerByte == 0x01) {
+                    receiverState = WAIT_FOR_BPM_DATA;
+                } else if (headerByte == 0x02) {
+                    receiverState = WAIT_FOR_BUTTON_DATA;
+                } else if (headerByte == 0x03) {
+                    receiverState = WAIT_FOR_TWO_DIGIT_BPM_DATA;
+                } else if (headerByte == 0x04) {  // New condition for Brightness data
+                    receiverState = WAIT_FOR_BRIGHTNESS_DATA;
+                } else if (headerByte == 0x05) {  // New condition for Color data
+                    receiverState = WAIT_FOR_COLOR_DATA;
+                } else {
+                    Serial.println("Received unexpected headerByte");
+                }
             }
-        }
-        break;
+            break;
 
-    case WAIT_FOR_BPM_DATA:
-        if (Serial1.available() >= 2) {
-            byte highByte = Serial1.read();
-            byte lowByte = Serial1.read();
-            currentBPM = (highByte << 8) | lowByte;
-            Serial.print("Received BPM: ");
-            Serial.println(currentBPM);
-            receiverState = WAIT_FOR_HEADER;
-        }
-        break;
+        case WAIT_FOR_BPM_DATA:
+            if (Serial1.available() >= 2) {
+                byte highByte = Serial1.read();
+                byte lowByte = Serial1.read();
+                currentBPM = (highByte << 8) | lowByte;
+                screenNeedsUpdate = true;
+                Serial.print("Received BPM: ");
+                Serial.println(currentBPM);
+                receiverState = WAIT_FOR_HEADER;
+            }
+            break;
 
-    case WAIT_FOR_TWO_DIGIT_BPM_DATA:
-        if (Serial1.available() >= 1) {
-            byte lowByte = Serial1.read();
-            currentBPM = lowByte;  // If high byte is 0, BPM is a two-digit number
-            String bpmWithLeadingZero = "0" + String(currentBPM);  // BPM with leading zero
-            Serial.print("Received BPM: ");
-            Serial.println(bpmWithLeadingZero);
-            receiverState = WAIT_FOR_HEADER;
-        }
-        break;
+        case WAIT_FOR_TWO_DIGIT_BPM_DATA:
+            if (Serial1.available() >= 1) {
+                byte lowByte = Serial1.read();
+                currentBPM = lowByte;                                  // If high byte is 0, BPM is a two-digit number
+                String bpmWithLeadingZero = "0" + String(currentBPM);  // BPM with leading zero
+                screenNeedsUpdate = true;
+                Serial.print("Received BPM: ");
+                Serial.println(bpmWithLeadingZero);
+                receiverState = WAIT_FOR_HEADER;
+            }
+            break;
 
         case WAIT_FOR_BUTTON_DATA:
             if (Serial1.available() >= 1) {
                 screenNeedsUpdate = true;
                 currentButton = Serial1.read();
+                screenNeedsUpdate = true;
                 Serial.print("Received Button State: ");
                 Serial.println(currentButton);
                 receiverState = WAIT_FOR_HEADER;
             }
             break;
+
+        case WAIT_FOR_BRIGHTNESS_DATA:
+            if (Serial1.available() >= 1) {
+                currentBrightness = Serial1.read();
+                Serial.print("Received Brightness: ");
+                Serial.println(currentBrightness);
+                receiverState = WAIT_FOR_HEADER;
+            }
+            break;
+
+            // You can use any (4 or) 5 pins
+        case WAIT_FOR_COLOR_DATA:
+            if (Serial1.available() >= 1) {
+                currentColor = Serial1.read();
+                Serial.print("Received Color: ");
+                Serial.println(currentColor);
+                receiverState = WAIT_FOR_HEADER;
+            }
+            break;
+    }
+}
+
+// Websockets
+void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
+    switch (type) {
+        case WStype_DISCONNECTED:
+            Serial.println("[WebSocket] Disconnected");
+            isConnected = false;
+            break;
+        case WStype_CONNECTED:
+            Serial.print("[WebSocket] Connected to: ");
+            Serial.println((char*)payload);
+            isConnected = true;
+            break;
+        case WStype_TEXT:
+            Serial.print("[WebSocket] Text: ");
+            for (size_t i = 0; i < length; i++) {
+                Serial.print((char)payload[i]);
+            }
+            Serial.println();
+            break;
+    }
+}
+
+void connectToWiFi() {
+    // Check if WiFi is connected
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println(WiFi.RSSI());
+        // Attempt to connect to WiFi
+        if (millis() - wifiConnectAttemptTime > 10000) {  // 10 seconds have passed since the last connection attempt
+            WiFi.begin(ssid, password);
+            wifiConnectAttemptTime = millis();
+        }
+        if (WiFi.status() == WL_CONNECTED) {
+            Serial.println("Connected to WiFi");
+        } else {
+            Serial.println("Failed to connect to WiFi");
+            return;  // Skip the rest of the loop
+        }
+    }
+}
+
+void sendDataAtBPMInterval() {
+    unsigned long sendInterval = 60000 / currentBPM; // Convert BPM to interval in milliseconds
+
+    // Check if the send interval has passed since the last send
+    if (millis() - lastSendTime >= sendInterval) {
+        Serial.println("Sending data to WebSocket server...");
+        String dataToSend = String(arduinoID) + "," + String(currentBPM) + "," + String(currentButton) + "," + String(currentBrightness) + "," + String(currentColor);
+        client.sendTXT(dataToSend);
+        Serial.println("Data sent: " + dataToSend);
+
+        // Update the time of the last send
+        lastSendTime = millis();
     }
 }
