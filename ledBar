@@ -3,15 +3,15 @@
 #include <WebSocketsClient_Generic.h>
 #include <WiFiNINA_Generic.h>
 
-#define NUM_LEDS 19
+#define NUM_LEDS 150
 #define DATA_PIN 13
 CRGB leds[NUM_LEDS];
 
 // Network settings
-const char* ssid = "";
-const char* password = "";
-const char* server = "";
-const int port = ;
+const char* ssid = "wts";
+const char* password = "acidflip";
+const char* server = "10.42.0.1";
+const int port = 1995;
 const String arduinoID = "1";  // Unique ID for this Arduino
 
 // WebSocket client
@@ -51,6 +51,7 @@ void loop() {
     if (currentButton == 1) {
       addGlitter(80);  // Adjust the 'chanceOfGlitter' parameter as needed
     }
+
     FastLED.setBrightness(currentBrightness);
     FastLED.show();
 
@@ -139,6 +140,7 @@ void addGlitter(fract8 chanceOfGlitter) {
     }
   }
 }
+
 
 void turnOnLEDs() {
   isBlinking = true;
