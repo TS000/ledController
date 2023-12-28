@@ -9,10 +9,10 @@
 WebSocketsClient client;
 
 // Sockets
-const char* ssid = "";
-const char* password = "";
-const char* server = "";
-const int port = ;
+const char* ssid = "wts";
+const char* password = "acidflip";
+const char* server = "10.42.0.1";
+const int port = 1995;
 const String arduinoID = "9";
 
 WiFiClient wifiClient;
@@ -58,9 +58,13 @@ int previousButton;
 int previousBrightness;
 int previousColor;
 
+// Screen vars
+unsigned long lastBPMUpdateTime = 0; // Global variable to store the last BPM update time
+bool isDisplayVisible = true;        // Global flag to track display state
+
 // Define menu headers
 static const char* menuHeaders[] = {
-    "_test:",
+    "_weird:",
     "test",
     "test",
     "test"};
@@ -98,7 +102,7 @@ void setup() {
     Serial1.begin(9600);
 
     tft.begin();  // Initialize the OLED display using the tft object
-    tft.setRotation(1);
+    tft.setRotation(3);
     tft.fillScreen(BLACK);  // Fill the screen with black
     WiFi.begin(ssid, password);
 
@@ -122,7 +126,29 @@ void loop() {
 
     receiver();
 
-    // Check if a menu item has been selected
+    // Consolidate BPM update checks
+    if (currentBPM != previousBPM) {
+        lastBPMUpdateTime = millis();
+        previousBPM = currentBPM;
+        isDisplayVisible = true; // Ensure display is visible when BPM is updated
+        screenNeedsUpdate = true;
+    }
+
+    // Check if 3 seconds have passed since the last BPM update
+    if (millis() - lastBPMUpdateTime > 10000 && isDisplayVisible) {
+        tft.fillScreen(BLACK); // Turn off the display by filling it with black
+        isDisplayVisible = false;
+        Serial.println("Display turned off");
+    }
+
+    // Update the screen only if it is visible and needs updating
+    if (isDisplayVisible && screenNeedsUpdate) {
+        displayMenu(currentBPM, currentButton);
+        screenNeedsUpdate = false;
+        Serial.println("Display updated");
+    }
+
+      // Check if a menu item has been selected
     if (menuItemSelected) {
         switch (selectedMenuItem) {
             case 1:
@@ -138,16 +164,6 @@ void loop() {
 
         // Reset the flag
         menuItemSelected = false;
-    }
-
-    if (currentBPM != previousBPM) {
-        screenNeedsUpdate = true;
-        previousBPM = currentBPM;
-    }
-
-    if (screenNeedsUpdate) {
-        displayMenu(currentBPM, currentButton);
-        screenNeedsUpdate = false;
     }
 }
 
@@ -225,14 +241,20 @@ void receiver() {
             }
             break;
 
-        case WAIT_FOR_BPM_DATA:
+         case WAIT_FOR_BPM_DATA:
             if (Serial1.available() >= 2) {
                 byte highByte = Serial1.read();
                 byte lowByte = Serial1.read();
+
+                Serial.print("Raw BPM Bytes - High: ");
+                Serial.print(highByte, HEX); // Print in hexadecimal
+                Serial.print(", Low: ");
+                Serial.println(lowByte, HEX);
+
                 currentBPM = (highByte << 8) | lowByte;
-                screenNeedsUpdate = true;
-                Serial.print("Received BPM: ");
+                Serial.print("Interpreted BPM: ");
                 Serial.println(currentBPM);
+
                 receiverState = WAIT_FOR_HEADER;
             }
             break;
@@ -249,11 +271,15 @@ void receiver() {
             }
             break;
 
-        case WAIT_FOR_BUTTON_DATA:
+       case WAIT_FOR_BUTTON_DATA:
             if (Serial1.available() >= 1) {
-                screenNeedsUpdate = true;
                 currentButton = Serial1.read();
-                screenNeedsUpdate = true;
+                
+                if (!isDisplayVisible) {
+                    isDisplayVisible = true;  // Turn on the display
+                    screenNeedsUpdate = true; // Mark that the screen needs to be updated
+                }
+
                 Serial.print("Received Button State: ");
                 Serial.println(currentButton);
                 receiverState = WAIT_FOR_HEADER;
